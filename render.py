@@ -10,6 +10,8 @@
 #
 import numpy as np
 import torch
+
+import scene
 from scene import Scene
 import os
 from tqdm import tqdm
@@ -58,7 +60,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         checkpoint = os.path.join(args.model_path, 'chkpnt30000.pth')
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, args, mode='test')
-        
+
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 

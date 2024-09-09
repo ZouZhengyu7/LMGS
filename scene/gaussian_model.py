@@ -124,7 +124,25 @@ class GaussianModel:
             self.spatial_lr_scale) = model_args
             if not training_args.include_feature: # 如果是以原始gs为初始化来训练feature的话，就不需要restore optimizer
                 self.optimizer.load_state_dict(opt_dict)
-        
+        elif len(model_args) == 16: # 这是一个不训练feature保存的ckpt
+            (self.active_sh_degree,
+             self._xyz,
+             _,
+             self._features_dc,
+             self._features_rest,
+             self._scaling,
+             self._rotation,
+             self._opacity,
+             self.max_radii2D,
+             _,
+             xyz_gradient_accum,
+             _,
+             denom,
+             _,
+             opt_dict,
+             self.spatial_lr_scale) = model_args
+            if not training_args.include_feature: # 如果是以原始gs为初始化来训练feature的话，就不需要restore optimizer
+                self.optimizer.load_state_dict(opt_dict)
         if mode == 'train':
             self.training_setup(training_args)
             self.xyz_gradient_accum = xyz_gradient_accum
