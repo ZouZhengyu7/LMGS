@@ -61,6 +61,10 @@ class GaussianModel:
         self.setup_functions()
 
     def capture(self, include_feature=False):
+        if self.optimizer is None:
+            state_dict=None
+        else:
+            state_dict=self.optimizer.state_dict()
         if include_feature:
             assert self._language_feature is not None, "没有设置language feature"
             return (
@@ -75,7 +79,7 @@ class GaussianModel:
                 self.max_radii2D,
                 self.xyz_gradient_accum,
                 self.denom,
-                self.optimizer.state_dict(),
+                state_dict,
                 self.spatial_lr_scale,
             )
         else:
@@ -90,7 +94,7 @@ class GaussianModel:
                 self.max_radii2D,
                 self.xyz_gradient_accum,
                 self.denom,
-                self.optimizer.state_dict(),
+                state_dict,
                 self.spatial_lr_scale,
             )            
     

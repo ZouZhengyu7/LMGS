@@ -13,16 +13,21 @@ import logging
 import cv2
 import numpy as np
 import torch
+import torchvision
 import time
 from tqdm import tqdm
+import copy
 
 import sys
+
 sys.path.append("..")
 import colormaps
 from autoencoder.model import Autoencoder
 from openclip_encoder import OpenCLIPNetwork
 from utils_eval import smooth, colormap_saving, vis_mask_save, polygon_to_mask, stack_mask, show_result
 from scene.gaussian_model import GaussianModel
+
+
 def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
     logger = logging.getLogger(name)
     stream_handler = logging.StreamHandler()
@@ -67,7 +72,7 @@ def eval_gt_lerfdata(json_folder: Union[str, Path] = None, ouput_path: Path = No
         idx = int(gt_data['info']['name'].split('_')[-1].split('.jpg')[0]) - 1
         for prompt_data in gt_data["objects"]:
             label = prompt_data['category']
-            box = np.asarray(prompt_data['bbox']).reshape(-1)           # x1y1x2y2
+            box = np.asarray(prompt_data['bbox']).reshape(-1)  # x1y1x2y2
             mask = polygon_to_mask((h, w), prompt_data['segmentation'])
             if img_ann[label].get('mask', None) is not None:
                 mask = stack_mask(img_ann[label]['mask'], mask)
@@ -90,19 +95,22 @@ def activate_stream(sem_map,
                     clip_model,
                     point_xyz,
                     output_path,
-                    thresh : float = 0.5,
-                    colormap_options = None):
-    valid_map = clip_model.get_max_across(sem_map)                 # 3xkx832x1264
+                    generate_mask,
+                    index,
+                    gaussians_list=None,
+                    thresh: float = 0.5,
+                    colormap_options=None):
+    valid_map = clip_model.get_max_across(sem_map)  # 3xkx832x1264
     n_head, n_prompt, h, w = valid_map.shape
 
     # positive prompts
     chosen_iou_list, chosen_lvl_list = [], []
-    for k in tqdm(range(n_prompt)):
+    for k in range(n_prompt):
         iou_lvl = np.zeros(n_head)
         mask_lvl = np.zeros((n_head, h, w))
-        output_dir =  os.path.join(output_path, 'heatmap')
+        output_dir = os.path.join(output_path, 'heatmap')
         if not os.path.exists(output_dir):
-            os.makedirs(output_dir)  # 创建不存在的目录
+            os.makedirs(output_dir)
         for i in range(n_head):
             # NOTE 加滤波结果后的激活值图中找最大值点
             # scale = 30
@@ -112,14 +120,43 @@ def activate_stream(sem_map,
             # avg_filtered = torch.from_numpy(avg_filtered).to(valid_map.device)
             # valid_map[i][k] = 0.5 * (avg_filtered + valid_map[i][k])
 
-            rgb_language=colormap_saving(valid_map[i][k].unsqueeze(-1), colormap_options,None)
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(point_xyz)
+            rgb_language = colormap_saving(valid_map[i][k].unsqueeze(-1), colormap_options, None)
 
-            pcd.colors = o3d.utility.Vector3dVector(rgb_language.reshape(rgb_language.shape[0],3))
-            save_path =  os.path.join(output_dir,output_path.split('/')[-1]+f'_{clip_model.positives[k]}_{i}.ply')
-            o3d.io.write_point_cloud(save_path, pcd)
-            # # NOTE 与lerf一致，激活值低于0.5的认为是背景
+            if gaussians_list is not None:
+                gaussians = gaussians_list[i]
+                mask = (valid_map[i][k] > 0.65).squeeze()
+                rgb_language = rgb_language[mask.detach().cpu().numpy()]
+                gaussians_temp = copy.deepcopy(gaussians)
+                gaussians_temp._features_dc = gaussians_temp._features_dc[mask]
+                gaussians_temp._features_rest = gaussians_temp._features_rest[mask]
+                gaussians_temp._language_feature = gaussians_temp._language_feature[mask]
+                gaussians_temp._opacity = gaussians_temp._opacity[mask]
+                gaussians_temp._rotation = gaussians_temp._rotation[mask]
+                gaussians_temp._scaling = gaussians_temp._scaling[mask]
+                gaussians_temp._xyz = gaussians_temp._xyz[mask]
+                gaussians_temp.max_radii2D = gaussians_temp.max_radii2D[mask]
+                gaussians_temp.save_ply(output_path + '/point_cloud/' + f'exclude_{clip_model.positives[k]}_{i}.ply')
+                # torch.save((gaussians_temp.capture(True), 30000), output_path + "/chkpnt/" + f'exclude_{clip_model.positives[k]}_{i}.pth')
+                pcd = o3d.geometry.PointCloud()
+                pcd.points = o3d.utility.Vector3dVector(point_xyz[mask.detach().cpu().numpy()])
+
+                pcd.colors = o3d.utility.Vector3dVector(rgb_language.reshape(rgb_language.shape[0], 3))
+                save_path = os.path.join(output_dir,
+                                         output_path.split('/')[-1] + f'exclude_{clip_model.positives[k]}_{i}.ply')
+                o3d.io.write_point_cloud(save_path, pcd)
+            elif generate_mask:
+                mask = valid_map[i][k] > 0.58
+                mask_path = os.path.join(output_path, "masks", clip_model.positives[k], str(i), f'{index}.png')
+                torchvision.utils.save_image(mask.float(), mask_path)
+            else:
+                pcd = o3d.geometry.PointCloud()
+                pcd.points = o3d.utility.Vector3dVector(point_xyz)
+
+                pcd.colors = o3d.utility.Vector3dVector(rgb_language.reshape(rgb_language.shape[0], 3))
+                save_path = os.path.join(output_dir,
+                                         output_path.split('/')[-1] + f'exclude_{clip_model.positives[k]}_{i}.ply')
+                o3d.io.write_point_cloud(save_path, pcd)
+            # NOTE 与lerf一致，激活值低于0.5的认为是背景
             # p_i = torch.clip(valid_map[i][k] - 0.5, 0, 1).unsqueeze(-1)
             # valid_composited = colormaps.apply_colormap(p_i / (p_i.max() + 1e-6), colormaps.ColormapOptions("turbo"))
             # mask = (valid_map[i][k] < 0.5).squeeze()
@@ -160,13 +197,11 @@ def activate_stream(sem_map,
         # vis_mask_save(mask_lvl[chosen_lvl], save_path)
 
 
-
-
 def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
     output_path_loca = image_name / 'localization'
     output_path_loca.mkdir(exist_ok=True, parents=True)
 
-    valid_map = clip_model.get_max_across(sem_map)                 # 3xkx832x1264
+    valid_map = clip_model.get_max_across(sem_map)  # 3xkx832x1264
     n_head, n_prompt, h, w = valid_map.shape
 
     # positive prompts
@@ -177,9 +212,9 @@ def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
 
         # NOTE 平滑后的激活值图中找最大值点
         scale = 30
-        kernel = np.ones((scale,scale)) / (scale**2)
+        kernel = np.ones((scale, scale)) / (scale ** 2)
         np_relev = select_output.cpu().numpy()
-        avg_filtered = cv2.filter2D(np_relev.transpose(1,2,0), -1, kernel)
+        avg_filtered = cv2.filter2D(np_relev.transpose(1, 2, 0), -1, kernel)
 
         score_lvl = np.zeros((n_head,))
         coord_lvl = []
@@ -187,7 +222,7 @@ def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
             score = avg_filtered[..., i].max()
             coord = np.nonzero(avg_filtered[..., i] == score)
             score_lvl[i] = score
-            coord_lvl.append(np.asarray(coord).transpose(1,0)[..., ::-1])
+            coord_lvl.append(np.asarray(coord).transpose(1, 0)[..., ::-1])
 
         selec_head = np.argmax(score_lvl)
         coord_final = coord_lvl[selec_head]
@@ -220,8 +255,8 @@ def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
     return acc_num
 
 
-def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, encoder_hidden_dims, decoder_hidden_dims,compressed_sem_feats,point_xyz):
-
+def evaluate(feat_dir, output_path, ae_ckpt_path, generate_mask, mask_thresh, encoder_hidden_dims, decoder_hidden_dims,
+             compressed_sem_feats, point_xyz, gaussians_list=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     colormap_options = colormaps.ColormapOptions(
         colormap="turbo",
@@ -231,13 +266,13 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
     )
 
     # gt_ann, image_shape, image_paths = eval_gt_lerfdata(Path(json_folder), Path(output_path))
-    # eval_index_list = [int(idx) for idx in list(gt_ann.keys())]
-    # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), *image_shape, 3), dtype=np.float32)
-    # for i in range(len(feat_dir)):
-    #     feat_paths_lvl = sorted(glob.glob(os.path.join(feat_dir[i], '*.npy')),
-    #                            key=lambda file_name: int(os.path.basename(file_name).split(".npy")[0]))
-    #     for j, idx in enumerate(eval_index_list):
-    #         compressed_sem_feats[i][j] = np.load(feat_paths_lvl[idx])
+    if gaussians_list is None and generate_mask:
+        compressed_sem_feats = np.zeros((len(feat_dir), 177, 730, 988, 3), dtype=np.float32)
+        for i in range(len(feat_dir)):
+            feat_paths_lvl = sorted(glob.glob(os.path.join(feat_dir[i], '*.npy')),
+                                    key=lambda file_name: int(os.path.basename(file_name).split(".npy")[0]))
+            for j, idx in enumerate(feat_paths_lvl):
+                compressed_sem_feats[i][j] = np.load(idx)
 
     # instantiate autoencoder and openclip
     clip_model = OpenCLIPNetwork(device)
@@ -248,22 +283,28 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
 
     # chosen_iou_all, chosen_lvl_list = [], []
     # acc_num = 0
-    for j in range(compressed_sem_feats.shape[1]):
-
+    for j in tqdm(range(compressed_sem_feats.shape[1])):
         sem_feat = compressed_sem_feats[:, j, ...]
         sem_feat = torch.from_numpy(sem_feat).float().to(device)
 
         with torch.no_grad():
             lvl, h, w, _ = sem_feat.shape
             restored_feat = model.decode(sem_feat.flatten(0, 2))
-            restored_feat = restored_feat.view(lvl, h, w, -1)           # 3x832x1264x512
+            restored_feat = restored_feat.view(lvl, h, w, -1)  # 3x832x1264x512
 
-        img_ann = ['stuffed bear', 'coffee mug', 'bag of cookies', 'sheep', 'apple', 'paper napkin', 'plate', 'tea in a glass', 'bear nose', 'three cookies', 'coffee']
-        # img_ann = ['sheep']
+        img_ann = ['stuffed bear', 'coffee mug', 'bag of cookies', 'sheep', 'apple', 'paper napkin', 'plate',
+                   'tea in a glass', 'bear nose', 'three cookies', 'coffee', 'dall-e brand', 'yellow pouf', 'hooves']
+        # img_ann = ['apple','tea in a glass']
+        if generate_mask:
+            for folder_name in img_ann:
+                for i in range(len(feat_dir)):
+                    folder_path = os.path.join(output_path, "masks", folder_name, str(i))
+                    os.makedirs(folder_path, exist_ok=True)
         clip_model.set_positives(img_ann)
 
-        activate_stream(restored_feat, clip_model,point_xyz,output_path,
-                             thresh=mask_thresh, colormap_options=colormap_options)
+        activate_stream(restored_feat, clip_model, point_xyz, output_path, generate_mask, j,
+                        gaussians_list=gaussians_list,
+                        thresh=mask_thresh, colormap_options=colormap_options)
         # chosen_iou_all.extend(c_iou_list)
         # chosen_lvl_list.extend(c_lvl)
         #
@@ -282,6 +323,7 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
     #     total_bboxes += len(list(img_ann.keys()))
     # acc = acc_num / total_bboxes
     # logger.info("Localization accuracy: " + f'{acc:.4f}')
+
 
 def seed_everything(seed_value):
     random.seed(seed_value)
@@ -308,13 +350,17 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--json_folder", type=str, default=None)
     parser.add_argument("--mask_thresh", type=float, default=0.4)
+    #直接剔除高斯点
+    parser.add_argument("--exclude_objects", action="store_true", help='3d query')
+    #利用render.py渲染的2d language_feature,生成mask
+    parser.add_argument("--generate_mask", action="store_true",help='2d query')
     parser.add_argument('--encoder_dims',
-                        nargs = '+',
+                        nargs='+',
                         type=int,
                         default=[256, 128, 64, 32, 3],
                         )
     parser.add_argument('--decoder_dims',
-                        nargs = '+',
+                        nargs='+',
                         type=int,
                         default=[16, 32, 64, 128, 256, 256, 512],
                         )
@@ -323,8 +369,8 @@ if __name__ == "__main__":
     # NOTE config setting
     dataset_name = args.dataset_name
     mask_thresh = args.mask_thresh
-    feat_dir = [os.path.join(args.feat_dir, dataset_name+f"_{i}", "train/ours_None/renders_npy") for i in range(1,4)]
-    ckpt_dir = [os.path.join(args.feat_dir, dataset_name+f"_{i}", "chkpnt30000.pth") for i in range(1,4)]
+    feat_dir = [os.path.join(args.feat_dir, dataset_name + f"_{i}", "train/ours_None/renders_npy") for i in range(1, 4)]
+    ckpt_dir = [os.path.join(args.feat_dir, dataset_name + f"_{i}", "chkpnt30000.pth") for i in range(1, 4)]
     output_path = os.path.join(args.output_dir, dataset_name)
     ae_ckpt_path = os.path.join(args.ae_ckpt_dir, dataset_name, "best_ckpt.pth")
     json_folder = os.path.join(args.json_folder, dataset_name)
@@ -332,18 +378,30 @@ if __name__ == "__main__":
     checkpoint = ckpt_dir[0]
     (model_params, first_iter) = torch.load(checkpoint)
     gaussians.restore(model_params, args, mode='test')
+    gaussians_list = [copy.deepcopy(gaussians)]
     compressed_sem_feats = np.zeros((3, 1, gaussians.get_language_feature.shape[0], 1, 3), dtype=np.float32)
-    compressed_sem_feats[0]=gaussians.get_language_feature.detach().cpu().numpy().reshape(1, gaussians.get_language_feature.shape[0], 1, 3)
-    point_xyz=gaussians.get_xyz.detach().cpu().numpy()
-    for i in range (1,3):
+    compressed_sem_feats[0] = gaussians.get_language_feature.detach().cpu().numpy().reshape(1,
+                                                                                            gaussians.get_language_feature.shape[
+                                                                                                0], 1, 3)
+    point_xyz = gaussians.get_xyz.detach().cpu().numpy()
+    for i in range(1, 3):
         checkpoint = ckpt_dir[i]
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, args, mode='test')
-        compressed_sem_feats[i]=gaussians.get_language_feature.detach().cpu().numpy().reshape(1, gaussians.get_language_feature.shape[0], 1, 3)
+        gaussians_list.append(copy.deepcopy(gaussians))
+        compressed_sem_feats[i] = gaussians.get_language_feature.detach().cpu().numpy().reshape(1,
+                                                                                                gaussians.get_language_feature.shape[
+                                                                                                    0], 1, 3)
     # NOTE logger
     # timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     # os.makedirs(output_path, exist_ok=True)
     # log_file = os.path.join(output_path, f'{timestamp}.log')
     # logger = get_logger(f'{dataset_name}', log_file=log_file, log_level=logging.INFO)
-
-    evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, args.encoder_dims, args.decoder_dims, compressed_sem_feats,point_xyz)
+    if args.exclude_objects:
+        evaluate(feat_dir, output_path, ae_ckpt_path, args.generate_mask, mask_thresh, args.encoder_dims,
+                 args.decoder_dims,
+                 compressed_sem_feats, point_xyz, gaussians_list=gaussians_list)
+    else:
+        evaluate(feat_dir, output_path, ae_ckpt_path, args.generate_mask, mask_thresh, args.encoder_dims,
+                 args.decoder_dims,
+                 compressed_sem_feats, point_xyz)

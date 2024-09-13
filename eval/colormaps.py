@@ -68,6 +68,7 @@ def apply_colormap(
     # rendering depth outputs
     if image.shape[-1] == 1 and torch.is_floating_point(image):
         output = image
+        mask=output<0.65
         if colormap_options.normalize:
             output = output - torch.min(output)
             output = output / (torch.max(output) + eps)
@@ -75,6 +76,7 @@ def apply_colormap(
             output * (colormap_options.colormap_max - colormap_options.colormap_min) + colormap_options.colormap_min
         )
         output = torch.clip(output, 0, 1)
+        output[mask]=0
         if colormap_options.invert:
             output = 1 - output
         return apply_float_colormap(output, colormap=colormap_options.colormap)
