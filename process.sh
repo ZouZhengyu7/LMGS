@@ -1,11 +1,12 @@
 #!/bin/bash
-dataset_path="/data1/zzy/zzy/LangSplat/scannet0"
-dataset_name="scannet0"
-casename="scannet0"
-# get the language feature of the scene
+base_path="scannet/scene0000_00"
+dataset_path=$base_path
+dataset_name=$(basename $base_path)
+casename=$(basename $base_path)
 python preprocess.py --dataset_path $dataset_path
 
 # train the autoencoder
+# shellcheck disable=SC2164
 cd autoencoder
 python train.py --dataset_path $dataset_path --encoder_dims 256 128 64 32 3 --decoder_dims 16 32 64 128 256 256 512 --lr 0.0007 --dataset_name $dataset_name
 # e.g. python train.py --dataset_path ../data/sofa --encoder_dims 256 128 64 32 3 --decoder_dims 16 32 64 128 256 256 512 --lr 0.0007 --dataset_name sofa
@@ -20,7 +21,7 @@ python test.py --dataset_path $dataset_path --dataset_name $dataset_name
 cd ..
 for level in 1 2 3
 do
-    python train.py -s $dataset_path -m output/${casename} --start_checkpoint $dataset_path/output/$dataset_name/chkpnt30000.pth --feature_level ${level} --port 44444
+    python train.py -s $dataset_path -m output/${casename} --start_checkpoint $dataset_path/output/$dataset_name/chkpnt30000.pth --feature_level ${level}
     # e.g. python train.py -s data/sofa -m output/sofa --start_checkpoint data/sofa/sofa/chkpnt30000.pth --feature_level 3
 done
 
