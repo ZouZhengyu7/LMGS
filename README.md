@@ -10,13 +10,13 @@ python download.py -o . --id scene0000_00
 python reader.py --filename scans/scene0000_00/scene0000_00.sens  --output_path scans/scene0000_00 --export_depth_images --export_color_images --export_poses --export_intrinsics
 #转化为colmap的格式
 python scannet2colmap.py --data_folder scans/scene0000_00
-#此时scannet目录应为：scene0617_00为后面训练的输入,结构和langsplat的一致
+#此时scannet目录应为：scene0000_00为后面训练的输入,结构和langsplat的一致
 ├── download.py
 ├── reader.py
 ├── scannet2colmap.py
 ├── scans
-│   └── scene0617_00
-├── scene0617_00
+│   └── scene0000_00
+├── scene0000_00
 │   └── images
 │   └── input
 │   └── output
