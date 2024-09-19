@@ -1,7 +1,7 @@
 #!/bin/bash
-dataset_path="/data1/zzy/zzy/LangSplat/waldo_kitchen"
-dataset_name="waldo_kitchen"
-casename="waldo_kitchen"
+dataset_path="/data1/zzy/zzy/LangSplat/scannet0"
+dataset_name="scannet0"
+casename="scannet0"
 # get the language feature of the scene
 python preprocess.py --dataset_path $dataset_path
 

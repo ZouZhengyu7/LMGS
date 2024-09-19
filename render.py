@@ -29,12 +29,10 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     render_npy_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders_npy")
     gts_npy_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt_npy")
-    masks_path = os.path.join(model_path, name, "ours_{}".format(iteration), "masks")
     makedirs(render_npy_path, exist_ok=True)
     makedirs(gts_npy_path, exist_ok=True)
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
-    makedirs(masks_path, exist_ok=True)
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         output = render(view, gaussians, pipeline, background, args)
 
@@ -42,7 +40,7 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
             rendering = output["render"]
         else:
             rendering = output["language_feature_image"]
-            if args.nonormalized:
+            if args.normalized:
                 min_value = torch.min(rendering)
                 max_value = torch.max(rendering)
                 normalized_rendering = (rendering - min_value) / (max_value - min_value)
@@ -51,14 +49,17 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
             gt = view.original_image[0:3, :, :]
 
         else:
+            masks_path = os.path.join(model_path, name, "ours_{}".format(iteration), "masks")
+            makedirs(masks_path, exist_ok=True)
             gt, mask = view.get_language_feature(os.path.join(source_path, args.language_features_name),
                                                  feature_level=args.feature_level)
 
         np.save(os.path.join(render_npy_path, '{0:05d}'.format(idx) + ".npy"), rendering.permute(1, 2, 0).cpu().numpy())
         np.save(os.path.join(gts_npy_path, '{0:05d}'.format(idx) + ".npy"), gt.permute(1, 2, 0).cpu().numpy())
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(mask.float(), os.path.join(masks_path, '{0:05d}'.format(idx) + ".png"))
+        if args.include_feature:
+            torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+            torchvision.utils.save_image(mask.float(), os.path.join(masks_path, '{0:05d}'.format(idx) + ".png"))
 
 
 def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, skip_train: bool, skip_test: bool,
