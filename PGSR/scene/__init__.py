@@ -24,7 +24,7 @@ import torch
 class Scene:
     gaussians: GaussianModel
 
-    def __init__(self, args: ModelParams, gaussians: GaussianModel, exclude_ply_path, load_iteration=None, shuffle=True,
+    def __init__(self, args: ModelParams, gaussians: GaussianModel, exclude_ply_path=None, load_iteration=None, shuffle=True,
                  resolution_scales=[1.0]):
         """b
         :param path: Path to colmap scene main folder.
