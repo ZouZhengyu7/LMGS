@@ -59,7 +59,7 @@ def main():
         for filename in pose_file_list:
             file_path = os.path.join(pose_folder, filename)
             file_id = int(os.path.splitext(filename)[0])
-            if file_id % 10 == 0:
+            if file_id % 6 == 0:
                 with open(file_path, 'r') as f:
                     lines = f.readlines()
                     matrix = []
