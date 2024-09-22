@@ -67,6 +67,9 @@ def main():
                         matrix.append(list(map(float, line.strip().split())))
                     pose_matrix = np.array(matrix)
                     q = np.linalg.inv(pose_matrix[:3, :3])
+                    if np.isnan(q).any() or np.isinf(q).any():
+                        print(f"Skipping file {filename} due to invalid matrix (nan or inf values)")
+                        continue
                     translation = -np.matmul(q, pose_matrix[:3, 3])
                     rotation = R.from_matrix(q)
                     quaternion = rotation.as_quat()
