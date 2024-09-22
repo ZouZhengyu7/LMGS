@@ -53,7 +53,7 @@ class ModelParams(ParamGroup):
         self._resolution = -1
         self._white_background = False
         self.data_device = "cuda"
-        self.eval = False
+        self.eval = True
         self.preload_img = True
         self.ncc_scale = 1.0
         self.multi_view_num = 8
