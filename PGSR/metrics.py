@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -35,7 +35,7 @@ def readImages(renders_dir, gt_dir):
     return renders, gts, image_names
 
 
-def evaluate(model_paths, gt_paths):
+def evaluate(model_paths):
     full_dict = {}
     per_view_dict = {}
     full_dict_polytopeonly = {}
@@ -50,7 +50,7 @@ def evaluate(model_paths, gt_paths):
             full_dict_polytopeonly[scene_dir] = {}
             per_view_dict_polytopeonly[scene_dir] = {}
 
-            test_dir = Path(scene_dir) / "train"
+            test_dir = Path(scene_dir) / "test"
 
             for method in os.listdir(test_dir):
                 print("Method:", method)
@@ -61,7 +61,7 @@ def evaluate(model_paths, gt_paths):
                 per_view_dict_polytopeonly[scene_dir][method] = {}
 
                 method_dir = test_dir / method
-                gt_dir = Path(gt_paths)
+                gt_dir = method_dir / "gt"
                 renders_dir = method_dir / "renders"
                 renders, gts, image_names = readImages(renders_dir, gt_dir)
 
@@ -102,6 +102,5 @@ if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
     parser.add_argument('--model_paths', '-m', required=True, nargs="+", type=str, default=[])
-    parser.add_argument('--gt_paths', '-g', required=True, type=str, default=None)
     args = parser.parse_args()
-    evaluate(args.model_paths, args.gt_paths)
+    evaluate(args.model_paths)
