@@ -1,3 +1,12 @@
+# 环境配置
+
+```shell
+git clone https://github.com/ZouZhengyu7/LMGS.git --recursive
+conda env create -f environment.yml
+```
+
+
+
 # Scannet
 
 下载Scannet数据集(指定场景)，导出位姿和图片等，并转化为colmap的格式
